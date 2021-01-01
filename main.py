@@ -1,14 +1,14 @@
 import json
 import os
+import platform
+import resource
 import socketserver
 import struct
 import subprocess
 import sys
 import tempfile
 import threading
-from time import sleep
 from typing import Dict, Optional
-from signal import signal, SIGINT, SIGTERM, SIGABRT
 
 from telegram.error import NetworkError
 from telegram.ext import Updater, Filters, MessageHandler, CommandHandler
@@ -67,7 +67,10 @@ def file_handler(update, context) -> None:
         user['input_size'] += temp_in.tell()
         temp_in.seek(0)
         try:
+            usage_start = resource.getrusage(resource.RUSAGE_CHILDREN)
             cp = subprocess.run(["./edU.exe"], timeout=30, stdin=temp_in, stdout=temp_out)
+            usage_end = resource.getrusage(resource.RUSAGE_CHILDREN)
+            user['processing_time'] += usage_end.ru_utime - usage_start.ru_utime
             if cp.returncode != 0:
                 user['executions_killed'] += 1
                 update.message.reply_text(f'Exit code: {cp.returncode}')
@@ -145,34 +148,40 @@ class SocketStreamHandler(socketserver.BaseRequestHandler):
 def main():
     global users
     global ADMIN
-    with open('./users.json', 'r', encoding='utf-8') as file:
-        users = json.load(file)
+    try:
+        with open('./users.json', 'r', encoding='utf-8') as file:
+            users = json.load(file)
+    except FileNotFoundError:
+        pass
 
     ADMIN = sys.argv[2]
+    
+    is_linux = platform.system().lower() == 'linux'
 
-    server_address: str = './apibot.sock'
+    if is_linux:
 
-    try:
-        os.unlink(server_address)
-    except OSError:
-        if os.path.exists(server_address):
-            raise
+        server_address: str = './apibot.sock'
 
-    server = socketserver.UnixStreamServer(server_address, SocketStreamHandler)
+        try:
+            os.unlink(server_address)
+        except OSError:
+            if os.path.exists(server_address):
+                raise
 
-    # Start the server in a thread
-    t = threading.Thread(target=server.serve_forever)
-    t.setDaemon(True)  # don't hang on exit
-    t.start()
+        server = socketserver.UnixStreamServer(server_address, SocketStreamHandler)
+
+        # Start the server in a thread
+        t = threading.Thread(target=server.serve_forever)
+        t.setDaemon(True)  # don't hang on exit
+        t.start()
 
     # Create the Updater and pass it your bot's token.
-    # updater = Updater('191412726:AAEEQFPcIsSx2q37Bn5YVA7-RtAF25hhW6U', use_context=True)
     updater = Updater(sys.argv[1], use_context=True)
 
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
 
-    dp.add_handler(MessageHandler(Filters.document & Filters.private, file_handler))
+    dp.add_handler(MessageHandler(Filters.document & Filters.chat_type.private, file_handler))
     dp.add_handler(CommandHandler("pid", pid))
 
     # log all errors
@@ -188,7 +197,8 @@ def main():
     # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
 
-    server.shutdown()
+    if is_linux:
+        server.shutdown()
 
     # logger.warning("Shutting down...")
     return
