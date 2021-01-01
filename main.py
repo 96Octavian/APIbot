@@ -1,13 +1,13 @@
 import json
 import os
 import platform
-import resource
 import socketserver
 import struct
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from typing import Dict, Optional
 
 from telegram.error import NetworkError
@@ -53,7 +53,7 @@ def get_user(update) -> Dict[str, int]:
 
 
 def write() -> None:
-    with open(f'./users.json', 'w') as json_file:
+    with open('./users.json', 'w') as json_file:
         json.dump(users, json_file, sort_keys=True, indent=4, separators=(',', ': '))
 
 
@@ -67,14 +67,14 @@ def file_handler(update, context) -> None:
         user['input_size'] += temp_in.tell()
         temp_in.seek(0)
         try:
-            usage_start = resource.getrusage(resource.RUSAGE_CHILDREN)
+            time_start = time.time_ns()
             cp = subprocess.run(["./edU.exe"], timeout=30, stdin=temp_in, stdout=temp_out)
-            usage_end = resource.getrusage(resource.RUSAGE_CHILDREN)
-            user['processing_time'] += usage_end.ru_utime - usage_start.ru_utime
             if cp.returncode != 0:
+                time_end = time.time_ns()
                 user['executions_killed'] += 1
                 update.message.reply_text(f'Exit code: {cp.returncode}')
             else:
+                time_end = time.time_ns()
                 user['output_size'] += temp_out.tell()
                 if temp_out.tell() == 0:
                     update.message.reply_text("Empty output. Maybe there are no prints in input?")
@@ -86,6 +86,7 @@ def file_handler(update, context) -> None:
                                               filename="output.txt")
 
         except subprocess.TimeoutExpired:
+            time_end = time.time_ns()
             update.message.reply_text(f'Execution took more than 30 seconds, killed')
         except NetworkError:
             try:
@@ -96,6 +97,8 @@ def file_handler(update, context) -> None:
             except NetworkError:
                 update.message.reply_text(
                     "The output took too long to update, network timeout hit. The output is too big")
+
+        user['processing_time'] += time_end - time_start
 
         write()
 
@@ -118,9 +121,9 @@ def send_msg(sock, msg):
 
 class SocketStreamHandler(socketserver.BaseRequestHandler):
 
-    def recvall(self, n:int)-> Optional[bytearray]:
+    def recvall(self, n: int) -> Optional[bytearray]:
         # Helper function to recv n bytes or return None if EOF is hit
-        data:bytearray = bytearray()
+        data: bytearray = bytearray()
         while len(data) < n:
             packet = self.request.recv(n - len(data))
             if not packet:
@@ -155,7 +158,7 @@ def main():
         pass
 
     ADMIN = sys.argv[2]
-    
+
     is_linux = platform.system().lower() == 'linux'
 
     if is_linux:
