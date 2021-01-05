@@ -31,7 +31,7 @@ def error_logger(update, context) -> None:
 
 
 def pid(update, context) -> None:
-    if update.message.from_user.id != ADMIN:
+    if str(update.message.from_user.id) != ADMIN:
         return
     text: str = f'PID: {os.getpid()}'
     update.message.reply_text(text)
@@ -72,7 +72,7 @@ def file_handler(update, context) -> None:
             if cp.returncode != 0:
                 time_end = time.time_ns()
                 user['executions_killed'] += 1
-                update.message.reply_text(f'Exit code: {cp.returncode}')
+                update.message.reply_text(f'Execution killed with exit code: {cp.returncode}')
             else:
                 time_end = time.time_ns()
                 user['output_size'] += temp_out.tell()
@@ -90,7 +90,7 @@ def file_handler(update, context) -> None:
             update.message.reply_text(f'Execution took more than 30 seconds, killed')
         except NetworkError:
             try:
-                update.message.reply_text("Network timeout hit, uploading may take a while")
+                update.message.reply_text("Network timeout hit, output upload may take a while")
                 temp_out.seek(0)
                 context.bot.send_document(chat_id=update.message.from_user.id, document=temp_out, filename="output.txt",
                                           timeout=600)
