@@ -8,6 +8,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import timedelta
 from typing import Dict, Optional
 
 from telegram.error import NetworkError
@@ -28,6 +29,18 @@ def error_logger(update, context) -> None:
     """Log Errors caused by Updates."""
     text: str = f'Error "{context.error}"'
     print(text)
+
+
+def stats(update, context) -> None:
+    user: Dict[str, int] = get_user(update)
+    microseconds: float = int(user['processing_time']) / 1000
+    text = f"Executions: {user['executions']}\n" \
+           f"Processed input size: {user['input_size']} bytes\n" \
+           f"Processed output size: {user['output_size']} bytes\n" \
+           f"Processing time: {timedelta(microseconds=microseconds)} ({user['processing_time']} nanoseconds)\n" \
+           f"Execution killed {user['executions_killed']} times\n" \
+           f"Crashed {user['crashes']} times"
+    update.message.reply_text(text)
 
 
 def pid(update, context) -> None:
@@ -186,6 +199,7 @@ def main():
 
     dp.add_handler(MessageHandler(Filters.document & Filters.chat_type.private, file_handler))
     dp.add_handler(CommandHandler("pid", pid))
+    dp.add_handler(CommandHandler("stats", stats))
 
     # log all errors
     dp.add_error_handler(error_logger)
